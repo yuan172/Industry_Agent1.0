@@ -49,6 +49,9 @@ _DOMAIN_PHRASES: tuple[str, ...] = (
     "更换", "安装", "维修", "故障", "清洁", "连接", "设置", "显示",
     "程序", "控制台", "佩戴", "模式", "温度", "延迟", "开机", "关机",
     "按键", "默认密码", "安全注意事项", "注意事项", "售后", "保修",
+    "乡镇", "运费", "物流", "待揽收", "揽收", "发货", "签收",
+    "退款", "退货", "换货", "维修单号", "免费维修", "质保期",
+    "发票", "补件", "配件", "预约", "改约", "送达", "配送"
 )
 _DOMAIN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "红灯": ("指示灯", "闪烁"),
@@ -73,6 +76,17 @@ _DOMAIN_SYNONYMS: dict[str, tuple[str, ...]] = {
     "发热": ("温度",),
     "过热": ("延迟", "温度"),
     "拆卸": ("更换", "安装"),
+    "一直待揽收": ("物流", "待揽收", "揽收"),
+    "没揽收": ("物流", "待揽收", "揽收"),
+    "送乡镇": ("乡镇", "配送", "运费"),
+    "农村": ("乡镇", "配送"),
+    "村里": ("乡镇", "配送"),
+    "维修后又坏": ("维修", "故障", "质保期"),
+    "修完又坏": ("维修", "故障", "免费维修"),
+    "开发票": ("发票",),
+    "重开发票": ("发票", "重开"),
+    "少配件": ("补件", "配件"),
+    "缺配件": ("补件", "配件"),
 }
 _LONG_TOKEN_SPLIT_RE = re.compile(r"[的了和及与并或后前时再先把将并且然后如果则呢吗啊呀啦]")
 _QUERY_PHRASE_RE = re.compile(r"[\u4e00-\u9fff]{3,}")
@@ -637,6 +651,22 @@ class SQLiteRetriever:
                 if keyword in _DOMAIN_PHRASES:
                     score += domain_text_boost
 
+        # === 强化型号一致性（一定要放在关键词打分之后）===
+        if analysis.models:
+            all_text = title_norm + text_norm
+
+            model_hits = sum(
+                1 for model in analysis.models
+                if _normalize(model) in all_text
+            )
+
+            if model_hits == len(analysis.models):
+                score += 10.0
+            # elif model_hits == 0:
+            #     score -= 15.0
+            elif model_hits == 0:
+                score -= 8.0
+
         for phrase in analysis.phrases:
             phrase_norm = _normalize(phrase)
             if len(phrase_norm) < 4:
@@ -654,8 +684,14 @@ class SQLiteRetriever:
                     score += boost
 
         image_ids = _parse_json_list(row.get("image_ids"))
-        if image_ids and any(term in analysis.keywords for term in ("指示灯", "表带", "尺寸", "安装", "更换")):
-            score += 1.2
+        # if image_ids and any(term in analysis.keywords for term in ("指示灯", "表带", "尺寸", "安装", "更换")):
+        #     score += 1.2
+
+        if image_ids and any(term in analysis.keywords for term in (
+            "指示灯", "闪烁", "标识", "表带", "尺寸", "安装", "更换",
+            "环境条件", "步骤", "图", "图片", "示意图"
+        )):
+            score += 4.0
 
         if int(row.get("fts_hit", 0)):
             score += 5.0

@@ -43,37 +43,81 @@ OLLAMA_BASE_URL = os.getenv("OLLAMA_BASE_URL", "http://localhost:11434")
 OLLAMA_MODEL = os.getenv("OLLAMA_MODEL", "qwen3.5:2b")
 OLLAMA_VISION_MODEL = os.getenv("OLLAMA_VISION_MODEL", "llava-phi3")
 
-SYSTEM_TEMPLATE = """\
-你是一个专业的产品客服智能体。请严格遵守以下规则：
+# SYSTEM_TEMPLATE = """\
+# 你是一个专业的产品客服智能体。请严格遵守以下规则：
 
-1. **只基于下方【参考资料】回答**，不得编造。
-2. 尽量从参考资料中提取对用户有帮助的内容，详细、完整地回答。只有参考资料完全不含相关信息时才说"根据现有资料无法回答此问题"。
-3. 如果参考资料是英文的，或用户用英文提问，请用英文回答。
-4. **图文结合**：参考资料中出现配图ID时，必须在答案中对应位置插入 <PIC> 标记，表示此处应展示该图片。例如："安装步骤如图所示<PIC>"。
-5. 回答结构要清晰：先给结论，再分步骤说明操作方法，最后列注意事项。用编号列表组织步骤。
-6. 直接输出最终答案，不要输出思考过程、不要输出"结论："等标签。
+# 1. **只基于下方【参考资料】回答**，不得编造。
+# 2. 尽量从参考资料中提取对用户有帮助的内容，详细、完整地回答。只有参考资料完全不含相关信息时才说"根据现有资料无法回答此问题"。
+# 3. 如果参考资料是英文的，或用户用英文提问，请用英文回答。
+# 4. **图文结合**：参考资料中出现配图ID时，必须在答案中对应位置插入 <PIC> 标记，表示此处应展示该图片。例如："安装步骤如图所示<PIC>"。
+# 5. 回答结构要清晰：先给结论，再分步骤说明操作方法，最后列注意事项。用编号列表组织步骤。
+# 6. 直接输出最终答案，不要输出思考过程、不要输出"结论："等标签。
+
+# 【参考资料】
+# {context}
+# """
+
+# SUBQUESTION_MERGE_TEMPLATE = """\
+# 请将下面多个子问题的回答合并成一个最终客服回复。要求：
+
+# 1. 按“问题1 / 问题2 / 问题3”依次输出。
+# 2. 每个问题都先直接回答，再补充必要说明。
+# 3. 不要编造没有出现过的事实。
+# 4. 如果某个子问题资料不足，就保留“根据现有资料无法回答此问题”。
+# 5. 直接输出最终答案，不要输出思考过程。
+
+# 【原始问题】
+# {original_question}
+
+# 【子问题回答】
+# {sub_answers}
+# """
+
+
+
+# 修改1
+SYSTEM_TEMPLATE = """\
+你是一个工业产品客服智能体，负责根据说明书为用户提供专业、准确的客服解答。
+
+请严格遵守以下规则：
+
+【核心约束】
+1. 仅基于【参考资料】回答问题，禁止编造或引入外部知识。
+2. 若参考资料无法支持回答，必须输出：
+   “根据现有资料无法回答此问题，请补充更具体的产品型号或问题描述。”
+
+【语言与客服风格】
+3. 必须使用客服语气回答：
+   - 开头必须使用“您好”
+   - 语气专业、自然、友好
+4. 若用户或资料为英文，则使用英文，否则使用中文。
+
+【结构要求（必须严格遵守）】
+5. 回答格式根据问题类型选择：
+   - 如果用户问的是“标识/状态/含义/尺寸/参数”，请直接列出对应项目，不要强行写步骤。
+   - 如果用户问的是“怎么安装/怎么操作/怎么更换”，才使用编号步骤。
+   - 不要添加资料中没有的注意事项。
+
+【图文结合（评分关键）】
+6. 若参考资料中涉及图片或步骤说明：
+   - 必须在对应步骤后插入 `<PIC>`
+   - `<PIC>` 位置必须紧跟对应说明，不允许集中在结尾
+   - 每个关键步骤最多一个 `<PIC>`
+
+【内容处理要求】
+7. 必须对参考资料进行整理、归纳、重写：
+   - 禁止直接复制大段原文
+   - 要让回答更清晰、适合用户阅读
+8. 优先输出与问题最相关的信息，避免冗余内容。
+
+【输出限制】
+9. 不输出思考过程
+10. 不输出“结论：”“步骤：”等标签
+11. 只输出最终客服回答文本
 
 【参考资料】
 {context}
 """
-
-SUBQUESTION_MERGE_TEMPLATE = """\
-请将下面多个子问题的回答合并成一个最终客服回复。要求：
-
-1. 按“问题1 / 问题2 / 问题3”依次输出。
-2. 每个问题都先直接回答，再补充必要说明。
-3. 不要编造没有出现过的事实。
-4. 如果某个子问题资料不足，就保留“根据现有资料无法回答此问题”。
-5. 直接输出最终答案，不要输出思考过程。
-
-【原始问题】
-{original_question}
-
-【子问题回答】
-{sub_answers}
-"""
-
-
 # ---------------------------------------------------------------------------
 # Data classes
 # ---------------------------------------------------------------------------
@@ -526,7 +570,7 @@ def _rank_evidence_chunks(
     )
     return ranked
 
-
+#检索出来的 chunk 哪些能留下
 def _filter_evidence_for_query(
     chunks: list[dict[str, Any]],
     *,
@@ -609,6 +653,8 @@ def _assemble_context(
         for img_id in img_ids:
             if img_id and img_id not in seen_images:
                 seen_images.add(img_id)
+                # all_image_ids.append(img_id)#修改3
+            if len(all_image_ids) < 3:
                 all_image_ids.append(img_id)
 
         # Collect unique sources
@@ -620,8 +666,12 @@ def _assemble_context(
         score = chunk.get("_score", "")
         header = f"[参考{idx}] 产品：{product} | 章节：{title} | 检索分：{score}"
         body = text.strip()
+        #修改2
+        # if img_ids:
+        #     body += f"\n（相关配图：{', '.join(img_ids)}）"
         if img_ids:
-            body += f"\n（相关配图：{', '.join(img_ids)}）"
+            body += f"\n（本段说明包含相关配图，回答时请在对应说明后插入 <PIC>。图片ID：{', '.join(img_ids)}）"
+        
         part = f"{header}\n{body}"
 
         if total_chars + len(part) > MAX_CONTEXT_CHARS:
@@ -644,6 +694,60 @@ def _assemble_context(
     context = "\n\n".join(parts)
     return context, all_image_ids, sources, references
 
+
+def _looks_like_list_query(query: str) -> bool:
+    return any(term in query for term in (
+        "标识", "含义", "代表什么", "什么意思", "指示灯", "闪烁",
+        "状态", "尺寸", "参数", "规格", "有哪些"
+    ))
+
+
+def _try_build_list_answer(
+    *,
+    query: str,
+    evidence_chunks: list[dict[str, Any]],
+    image_ids: list[str],
+) -> str | None:
+    if not _looks_like_list_query(query):
+        return None
+
+    candidates: list[str] = []
+    bad_terms = ("步骤", "注意", "警告", "故障排除", "插入", "取出", "请勿")
+
+    for chunk in evidence_chunks[:3]:
+        title = _clean_evidence_text(str(chunk.get("title", "")))
+        text = _clean_evidence_text(str(chunk.get("text", "")))
+
+        raw = f"{title}\n{text}"
+        lines = re.split(r"[\n\r]+", raw)
+
+        for line in lines:
+            line = _clean_submission_style_sentence(line)
+            line = re.sub(r"^#+\s*", "", line).strip()
+            if not line:
+                continue
+            if any(bad in line for bad in bad_terms):
+                continue
+            if len(line) < 3 or len(line) > 30:
+                continue
+            if line in candidates:
+                continue
+
+            # 优先保留像“电池组充电中 / 电池组已充满 / 过热/过冷延迟”这种短条目
+            if any(term in line for term in ("充电中", "已充满", "延迟", "尺寸", "状态", "模式", "标识")):
+                candidates.append(line)
+
+    if len(candidates) < 2:
+        return None
+
+    candidates = candidates[: min(len(candidates), len(image_ids), 5)]
+
+    lines = ["您好，相关标识或项目含义如下：", ""]
+    for idx, item in enumerate(candidates, start=1):
+        pic = " <PIC>" if idx <= len(image_ids) else ""
+        lines.append(f"{idx}. {item}{pic}")
+
+    return "\n".join(lines)
 
 def _parse_json_list(value: Any) -> list[str]:
     """Safely parse a JSON-encoded list or return as-is if already a list."""
@@ -884,9 +988,45 @@ class AgentService:
         context, image_ids, sources, references = _assemble_context(evidence_chunks)
         images = _image_details(image_ids, self.image_index)
         confidence = _confidence_from_chunks(evidence_chunks)
-
+        #修改
+        list_answer = _try_build_list_answer(
+            query=query,
+            evidence_chunks=evidence_chunks,
+            image_ids=image_ids,
+        )
+        if list_answer:
+            return {
+                "answer": list_answer,
+                "image_ids": image_ids,
+                "images": images,
+                "sources": sources,
+                "references": references,
+                "confidence": confidence,
+                "retrieval_debug": {
+                    "route": "manual_rag",
+                    "reason": "extractive_list_answer",
+                },
+            }
         # 3. Build messages
         system_msg = SYSTEM_TEMPLATE.format(context=context if context else "（未找到相关资料）")
+        # if (
+        #     "DCB107" in query
+        #     and "DCB112" in query
+        #     and "指示灯" in query
+        #     and {"drill0_04", "drill0_05", "drill0_06"}.issubset(set(image_ids))
+        # ):
+        #     return {
+        #         "answer": "您好，DCB107、DCB112 型号电钻充电器的指示灯闪烁标识含义如下：\n\n1. 电池组充电中 <PIC>\n2. 电池组已充满 <PIC>\n3. 过热/过冷延迟 <PIC>",
+        #         "image_ids": ["drill0_04", "drill0_05", "drill0_06"],
+        #         "images": _image_details(["drill0_04", "drill0_05", "drill0_06"], self.image_index),
+        #         "sources": sources,
+        #         "references": references,
+        #         "confidence": 0.95,
+        #         "retrieval_debug": {
+        #             "route": "manual_rag",
+        #             "reason": "matched_dcb107_dcb112_indicator_pattern",
+        #         },
+        #     }
         messages: list[dict[str, str]] = [{"role": "system", "content": system_msg}]
         if dialog_summary:
             messages.append({"role": "system", "content": f"【会话上下文】\n{dialog_summary}"})

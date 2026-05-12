@@ -9,8 +9,8 @@
   "mismatch_count": 4,
   "max_chunk_chars": 1200,
   "sqlite": {
-    "db_path": "/home/lancegan/Datas/Codes/Python/Industry_Agent/data/processed/kb/index.sqlite",
-    "fts5_available": true,
+    "db_path": "/home/jmy/jmy_code/Industry_Agent/data/processed/kb/index.sqlite",
+    "fts5_available": false,
     "chunk_count": 4132,
     "image_count": 2608,
     "manual_count": 21

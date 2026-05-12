@@ -165,6 +165,17 @@ _TOPIC_RULES: tuple[TopicRule, ...] = (
                 process="建议先联系承运商确认是否支持改派，再在平台侧同步更新或备注地址异常。",
                 contact="如果系统侧和物流侧信息不一致，建议携带订单号联系人工客服协调处理。",
             ),
+            ScenarioRule(
+                name="pickup_pending",
+                terms=("待揽收", "等待揽收", "未揽收", "没揽收", "一直显示待揽收"),
+                overview="您好，物流显示待揽收，大概率是商品已打包完成，正在等待快递员上门取件哦。",
+                materials="",
+                timeline="一般 24 小时内会完成揽收。",
+                fees="",
+                eligibility="",
+                process="若超过 24 小时仍未揽收，您可以联系我们客服，我们会催促快递方尽快上门。",
+                contact="",
+            ),
         ),
     ),
     TopicRule(
@@ -454,8 +465,15 @@ class CustomerServicePolicy:
         process = self._pick_field(rule, scenario, "process")
         contact = self._pick_field(rule, scenario, "contact")
 
+        # if not detail_intents:
+        #     return " ".join((overview, materials, process))
         if not detail_intents:
-            return " ".join((overview, materials, process))
+            parts = [overview]
+            if timeline:
+                parts.append(timeline)
+            if process:
+                parts.append(process)
+            return " ".join(part for part in parts if part)
 
         parts: list[str] = [overview]
         if "materials" in detail_intents:
@@ -493,7 +511,7 @@ class CustomerServicePolicy:
             closing = "如果你现在方便，我建议先把订单号、截图或凭证信息整理好，再继续提交或联系人工客服。"
 
         return (
-            "这类问题更适合按通用客服流程处理。"
+            # "这类问题更适合按通用客服流程处理。"
             f"{' '.join(unique_snippets[:2])} "
             f"{closing}"
         ).strip()

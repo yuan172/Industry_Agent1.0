@@ -418,7 +418,33 @@ _FALLBACK_PATTERNS = (
     r"当前回答仅基于知识库中的说明书资料，请以实际产品和原文为准[。]?",
     r"根据现有资料[，,]无法[^\n。]*[。]?",
 )
+def dedupe_sentences(text: str) -> str:
+    parts = re.split(r'(?<=[。！？.!?])\s*', text)
+    seen = set()
+    out = []
+    for p in parts:
+        p = p.strip()
+        if not p:
+            continue
+        key = re.sub(r'\s+', '', p)
+        if key not in seen:
+            seen.add(key)
+            out.append(p)
+    return " ".join(out)
 
+
+def manual_fallback(question: str) -> str:
+    return (
+        "根据当前检索到的说明书内容，未能准确定位该问题对应的具体步骤。"
+        "建议先确认产品型号，并查看说明书中的“操作方法”“维护保养”“故障排除”或“安全注意事项”章节。"
+        "如涉及启动、清洁、安装、维修或燃油/电源操作，请先断电、停机或等待设备冷却，再按说明书步骤执行，避免自行拆解。"
+    )
+
+
+def is_english_question(question: str) -> bool:
+    letters = sum(c.isalpha() for c in question)
+    chinese = sum('\u4e00' <= c <= '\u9fff' for c in question)
+    return letters > 10 and chinese == 0
 
 def clean_answer(raw_answer: str, question: str, image_ids: list[str],
                  sources: list[str], confidence: float, qid: int) -> str:
@@ -459,6 +485,9 @@ def clean_answer(raw_answer: str, question: str, image_ids: list[str],
     text = re.sub(r"参考\s*\[\d+\]", "", text)
     text = re.sub(r"（参考\s*[^\）]*）", "", text)
     text = re.sub(r"\(参考\s*[^\)]*\)", "", text)
+
+    # Remove repeated sentences
+    text = dedupe_sentences(text)
 
     # Strip fallback phrases but keep real content
     for pattern in _FALLBACK_PATTERNS:
@@ -523,12 +552,25 @@ def _get_cs_answer(question: str, qid: int) -> str:
     return _get_cs_template(question)
 
 
+# def _handle_empty(question: str, sources: list[str], image_ids: list[str], qid: int) -> str:
+#     if _is_customer_service_question(question):
+#         return _get_cs_answer(question, qid)
+#     text = "您好，当前还无法准确定位对应的说明书内容。请补充产品名称、型号、故障现象或图片，我再继续帮您查询。"
+#     return _format_answer_with_images(text, image_ids)
 def _handle_empty(question: str, sources: list[str], image_ids: list[str], qid: int) -> str:
     if _is_customer_service_question(question):
         return _get_cs_answer(question, qid)
-    text = "您好，当前还无法准确定位对应的说明书内容。请补充产品名称、型号、故障现象或图片，我再继续帮您查询。"
-    return _format_answer_with_images(text, image_ids)
 
+    if is_english_question(question):
+        text = (
+            "Based on the currently retrieved manual content, I could not accurately locate the exact procedure for this question. "
+            "Please confirm the product model and check the manual sections such as operation, maintenance, troubleshooting, or safety precautions. "
+            "If the task involves starting, cleaning, installation, repair, fuel, or power operation, stop the device or disconnect power first, and follow the manual steps carefully."
+        )
+    else:
+        text = manual_fallback(question)
+
+    return _format_answer_with_images(text, image_ids)
 
 def _is_customer_service_question(question: str) -> bool:
     cs_keywords = (
@@ -581,7 +623,8 @@ def main() -> None:
             data = resp.get("data", {}) if resp else {}
 
             raw_answer = data.get("answer", "") or ""
-            image_ids = list(data.get("image_ids", []) or [])
+            # image_ids = list(data.get("image_ids", []) or [])tupianshuliangxianzhi 
+            image_ids = list(data.get("image_ids", []) or [])[:3]
             sources = list(data.get("sources", []) or [])
             confidence = float(data.get("confidence", 0))
 
